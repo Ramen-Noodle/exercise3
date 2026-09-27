@@ -306,12 +306,21 @@ function interpRect(imagedata,top,bottom,left,right,globals,tlAttribs,trAttribs,
         lVect.copy(globals.lightPos);
         lVect = Vector.subtract(lVect,worldLoc);
         lVect = Vector.normalize(lVect);
-        var NdotL = Vector.dot(lVect,new Vector(0,0,1)); // rect in xy plane
+        var normal = new Vector(0,0,1); // rect in xy plane
+        var NdotL = Math.max(0,Vector.dot(lVect,normal));
+        var view = Vector.normalize(Vector.subtract(globals.eyePos,worldLoc));
+        var halfway = Vector.normalize(Vector.add(lVect,view));
+        var specular = NdotL > 0
+            ? globals.specular * Math.pow(Math.max(0,Vector.dot(normal,halfway)),globals.shininess)
+            : 0;
         
-        // calc diffuse color
-        difColor.r = attribs.diffuse.r * globals.lightCol.r/255 * NdotL;
-        difColor.g = attribs.diffuse.g * globals.lightCol.g/255 * NdotL;
-        difColor.b = attribs.diffuse.b * globals.lightCol.b/255 * NdotL;
+        // Ambient keeps the blue visible; Blinn-Phong specular adds a white highlight.
+        for (var channel of ["r","g","b"]) {
+            var ambient = attribs.diffuse[channel] * globals.ambient;
+            var diffuse = attribs.diffuse[channel] * globals.lightCol[channel]/255 * NdotL;
+            var highlight = globals.lightCol[channel] * specular;
+            difColor[channel] = Math.min(255,Math.max(0,ambient + diffuse + highlight));
+        }
         
         drawPixel(imagedata,pixX,pixY,difColor);
     } // end shade pixel
@@ -391,12 +400,24 @@ function main() {
     var imagedata = context.createImageData(w,h);
  
     // Define a rectangle in 2D with colors and coords at corners
-    var globals = { lightPos: new Vector(100,100,50),  // light over left upper rect
-                    lightCol: new Color(255,255,255)}; // light is white
+    var globals = { lightPos: new Vector(50,100,25), // z controls distance above rectangle
+                    lightCol: new Color(255,255,255),
+                    eyePos: new Vector(125,100,200),
+                    ambient: 0.15, // constant base illumination
+                    specular: 0.8, // highlight strength
+                    shininess: 32 }; // larger values give a tighter highlight
     var tlAttribs = { diffuse: new Color(0,0,255)};    // all four rect verts blue
     var trAttribs = { diffuse: new Color(0,0,255)};
     var brAttribs = { diffuse: new Color(0,0,255)};
     var blAttribs = { diffuse: new Color(0,0,255)};
-    interpRect(imagedata,50,150,50,200,globals,tlAttribs,trAttribs,brAttribs,blAttribs);
-    context.putImageData(imagedata,0,0); // display the image in the context
+    var startTime;
+    function animate(time) {
+        if (startTime === undefined) startTime = time;
+        // Sweep from x=50 to x=200 and back every four seconds.
+        globals.lightPos.x = 125 - 75 * Math.cos((time-startTime) * 2*Math.PI/4000);
+        interpRect(imagedata,50,150,50,200,globals,tlAttribs,trAttribs,brAttribs,blAttribs);
+        context.putImageData(imagedata,0,0);
+        requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
 } // end main
